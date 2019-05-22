@@ -6,6 +6,8 @@ To access the offline computer cluster, login to the display gateway of the Maxw
 ssh -X <upex account>@max-display.desy.de
 ```
 
+You will need X11 forwarding (using e.g. XQuartz) to be able to display graphics from the login node on your screen.
+
 Don't run big jobs on the login nodes. The Maxwell cluster uses Slurm to submit analysis jobs to the cluster, use the `upex` partition for XFEL analysis. To submit a job and view its status:
 
 ```
@@ -49,17 +51,39 @@ Before you start performing your analysis, don't forget to load the proper modul
 source xfel2145/source_this_at_euxfel
 ```
 
+## Experiment folder
+
+Once you login to the cluster you will start in your home directory. To go to the experiment directory, write:
+
+```
+cd /gpfs/exfel/exp/SPB/201802/p002145
+```
+
+This contains the `proc` folder for processed runs, `raw` folder for raw data runs, `usr` for smaller user files like software and calibration files and `scratch` for larger data files. Please make a folder in `scratch` with your UPEX user name and place your analysis output for the experiment there:
+
+```
+cd scratch
+mkdir <upex account>
+```
+
+For sharing files with other users, please make sure they have the correct permissions, which if you're being lazy means:
+
+```
+chmod 755 *
+```
+
 ## Module combiner
+
 AGIPD data is written in separate files for each module. The `combine_modules`
 python script combines the data from different modules and applies detector
 calibrations resulting in a detector image for a given run number and frame number.
 
-## Usage
+### Usage
 
 Here is some basic usage inside an `ipython` console.
 ```python
 import combine_modules
-c = Combine_modules.AGIPD_combiner(18) # For run 18 with AgBe data
+c = combine_modules.AGIPD_Combiner(18) # For run 18 with AgBe data
 frame = c.get_frame(8730, calibrate='true') # For frame number 8730
 ```
 
