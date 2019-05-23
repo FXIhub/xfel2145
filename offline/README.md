@@ -15,12 +15,10 @@ sbatch -p upex <job command>
 squeue -u <upex account>
 ```
 
-To allocate an analysis node that you can use interactively:
+To allocate an analysis node that you can use interactively, type:
 
 ```
-salloc -p upex -t 10:00:00
-squeue -u <upex account>
-ssh -X <node name>
+srun -p upex -t 10:00:00 --pty $SHELL -i
 ```
 
 You can find more useful Slurm commands here:
