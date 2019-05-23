@@ -15,12 +15,10 @@ sbatch -p upex <job command>
 squeue -u <upex account>
 ```
 
-To allocate an analysis node that you can use interactively:
+To allocate an analysis node that you can use interactively, type:
 
 ```
-salloc -p upex -t 10:00:00
-squeue -u <upex account>
-ssh -X <node name>
+srun -p upex -t 10:00:00 --pty $SHELL -i
 ```
 
 You can find more useful Slurm commands here:
@@ -85,6 +83,10 @@ Here is some basic usage inside an `ipython` console.
 import combine_modules
 c = combine_modules.AGIPD_Combiner(18) # For run 18 with AgBe data
 frame = c.get_frame(8730, calibrate='true') # For frame number 8730
+
+# For XFEL-calibrated data (from the /proc folder)
+c = combine_modules.AGIPD_Combiner(18, raw=False)
+frame = c.get_frame(8730)
 ```
 
 Note that the frame numbers are of just the cells which contain data. Thus, in 
@@ -95,3 +97,27 @@ this experiment, there are currenty 176 frames per train, resulting in 1760 indi
 See online documentation for Cheetah at EuXFEL:
 
 http://www.desy.de/~barty/cheetah/Cheetah/At_EuXFEL.html
+
+## VDS files
+An alternate way to look at the data is to use the virtual data set (VDS) feature of HDF5. These files can be generated with the `vds.py` script in this folder. Some runs should already be converted in the `/scratch/vds/` folder. These files have all the modules for a given train in the same dataset slice. Thus, one can use the simple HDF5/h5py API to access the data for a given frame.
+
+```
+$ h5ls -r r0018_vds_raw.h5
+/                        Group
+/INSTRUMENT              Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1 Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/data Dataset {16, 173008, 2, 512, 128}
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/trainId Dataset {173008}
+
+$ h5ls -r r0018_vds_proc.h5
+/                        Group
+/INSTRUMENT              Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1 Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image Group
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/data Dataset {16, 173008, 512, 128}
+/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/trainId Dataset {173008}
+```
+The extra dimension in the raw data has the gain (digital) data for the frame.
