@@ -12,6 +12,7 @@ class AGIPD_Calibrator:
         self._pulse_filter[max_pulses:] = False
         self._pulse_filter[0] = False
         self._pulse_filter[18::32] = False
+        self._pulse_filter[29::32] = False
         for filename in sorted(filenames):
             self._read_and_append_calibration_data(filename=filename)
         self._badpixData       = np.asarray(self._badpixData)
@@ -48,7 +49,7 @@ class AGIPD_Calibrator:
         badpixMask = np.ones(aduData.data.shape, dtype=np.bool)
 
         if apply_gain_switch:
-            outData -= self._darkOffsetData[-1][0][:len(outData)]
+            outData -= darkoffset[-1][0][:len(outData)]
             outData[gainData > gainleveldata[0,1]] = 32000
             badpixMask = (1 - badpixdata[0,0])
         else:
