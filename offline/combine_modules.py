@@ -20,7 +20,7 @@ class AGIPD_Combiner():
     Then use get_frame(num) to get specific frame
     '''
     def __init__(self, run, raw=True, calib_run=None, good_cells=range(176), verbose=0,
-            geom_fname='/gpfs/exfel/exp/SPB/201802/p002145/scratch/ayyerkar/ana/geometry/agipd_taw9_oy2_1050addu_hmg5.geom'):
+            geom_fname='/gpfs/exfel/exp/SPB/201802/p002145/scratch/ayyerkar/ana/geometry/a1.geom'):
         self.num_h5cells = 176
         self.verbose = verbose
         self.good_cells = np.array(good_cells)
@@ -32,7 +32,7 @@ class AGIPD_Combiner():
         if self.is_raw_data and calib_run is None:
             calib_glob='/gpfs/exfel/exp/SPB/201802/p002145/usr/Shared/calib/latest/Cheetah*.h5'
         elif self.is_raw_data:
-            calib_glob='/gpfs/exfel/exp/SPB/201802/p002145/scratch/calib/r%.4d/Cheetah*.h5'%calib_run
+            calib_glob='/gpfs/exfel/exp/SPB/201802/p002145/usr/Shared/calib/r%.4d/Cheetah*.h5'%calib_run
         self._make_flist(run, calib_glob)
         self._get_nframes_list()
         self.frame = np.empty((16,512,128))
@@ -86,7 +86,7 @@ class AGIPD_Combiner():
         self.nframes = module_nframes.max()
         self.nframes_list = np.cumsum(self.nframes_list)
 
-    def _calibrate(self, data, gain, module, cell):        
+    def _calibrate(self, data, gain, module, cell, cmode=True):        
         gain_mode = self._threshold(gain, module, cell)
         offset = np.empty(gain_mode.shape)
         gain = np.empty(gain_mode.shape)
@@ -99,6 +99,13 @@ class AGIPD_Combiner():
         data = (np.float32(data) - offset)*gain
         data[badpix != 0] = 0
         #data[data > 10000] = 10000
+
+        if cmode:
+            # Median subtraction by 64x64 asics
+            data = data.reshape(8,64,2,64).transpose(1,3,0,2).reshape(64,64,16)
+            data -= np.median(data, axis=(0,1))
+            data = data.reshape(64,64,8,2).transpose(2,0,3,1).reshape(512,128)
+        
         return data
 
     def _threshold(self, gain, module, cell):        
@@ -237,16 +244,17 @@ class AGIPD_Combiner():
     def get_gain(self, num, threshold=False, sync=True, assemble=True):
         return self._get_frame(num, type='gain', calibrate=False, threshold=threshold, sync=sync, assemble=assemble)
 
-    def get_powder(self):
+    def get_powder(self, minADU=0):
         if self.powder is not None:
             print('Powder sum already calculated')
             return self.powder
         
         powder_shape = (len(self.good_cells),) + self.frame.shape
+        print('powder_shape', powder_shape)
         powder = mp.Array(ctypes.c_double, len(self.good_cells)*self.frame.size)
         jobs = []
         for i in range(16):
-            p = mp.Process(target=self._powder_worker, args=(i, powder, powder_shape))
+            p = mp.Process(target=self._powder_worker, args=(i, powder, powder_shape, minADU))
             jobs.append(p)
             p.start()
         for j in jobs:
@@ -256,7 +264,7 @@ class AGIPD_Combiner():
         
         return self.powder
 
-    def _powder_worker(self, i, powder, shape):
+    def _powder_worker(self, i, powder, shape, minADU):
         dset_name = '/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/%dCH0:xtdf/image/data'%i
         np_powder = np.frombuffer(powder.get_obj()).reshape(shape)
         
@@ -267,11 +275,14 @@ class AGIPD_Combiner():
                 for k,cell in enumerate(self.good_cells):
                     ind = np.zeros((f[dset_name].shape[0],), dtype=np.bool)
                     ind[cell::self.num_h5cells] = True
-                    np_powder[k,i] += f[dset_name][cell::self.num_h5cells,0,:,:].mean(0)
+                    analog = f[dset_name][cell::self.num_h5cells,0,:,:]
+                    digital = f[dset_name][cell::self.num_h5cells,1,:,:]
+                    for p in range(analog.shape[0]):
+                        data = self._calibrate(analog[p], digital[p], i, cell)
+                        data[data<minADU] = 0
+                        np_powder[k,i] += data
                     if i == self.first_module:
                         sys.stderr.write('\rModule %d: (%d, %d)'%(i,j,k))
-        for k in range(len(self.good_cells)):
-            np_powder[k,i] /= len(self.flist[i])
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -281,13 +292,13 @@ if __name__ == '__main__':
     print('Calculating powder sum for run %d'%run)
     
     #c = AGIPD_Combiner(int(sys.argv[1]), good_cells=list(range(2,62,2)))
-    c = AGIPD_Combiner(int(sys.argv[1]), good_cells=[2])
-    c.get_powder()
+    c = AGIPD_Combiner(int(sys.argv[1]))
+    c.get_powder(minADU=30)
     
     import os
     if not os.path.isdir('data'):
         os.mkdir('data')
-    f = h5py.File('data/raw_powder_r%.4d.h5'%int(sys.argv[1]), 'w')
-    f['powder'] = c.powder
+    f = h5py.File('data/powder_r%.4d.h5'%int(sys.argv[1]), 'w')
+    f['data'] = c.powder
     f.close()
 
