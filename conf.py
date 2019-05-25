@@ -28,7 +28,7 @@ state['EuXFEL/DataSource'] = 'tcp://10.253.0.51:45000' # Raw
 #state['EuXFEL/DataSource'] = 'tcp://10.253.0.51:45011' # Calibrated
 state['EuXFEL/DataFormat'] = 'Raw'
 state['EuXFEL/MaxTrainAge'] = 4
-state['EuXFEL/MaxPulses'] = 115
+state['EuXFEL/MaxPulses'] = 110
 #state['EuXFEL/MaxPulses'] = 176
 
 # Use SelModule = None or remove key to indicate a full detector
@@ -46,35 +46,67 @@ running_background = None
 alignment  = True
 hitfinding = True
 background = False
-statistics = True
-manual_mask = False
+statistics = False
+calibrate  = True
+commonmode = True
+usemask = True
 
 # Hitfinding parameters
 adu_threshold  = 25
-hit_threshold  = 650
+hit_threshold  = 500
+maskhit_threshold = 120
+ratio_threshold = 2
 dark_threshold = 80
-
 
 # Display parameters
 show_max_hits = 2
 
+# Build a mask for hitfinding
+# NOTE: This is still in non-flipped geometry
+hitmask = np.zeros((128,512)).astype(np.bool)
+hitmask[:64,:64] = True
+hitmask = hitmask[:,:,np.newaxis]
 
-# Build up the mask
-mask = np.ones((128,512)).astype(np.bool)
-if manual_mask:
-    #mask[:,-64:] = False
-    mask[:,(256+128):] = False
-mask = mask[:,:,np.newaxis]
+# Dirty edge mask
+edgemask = np.ones((128,512,1)).astype(np.bool)
+edgemask[0::64, :, :]  = False
+edgemask[63::64, :, :] = False
+edgemask[:,0::64, :] = False
+edgemask[:,63::64, :] = False
 
-read_mask = False
+read_mask = True
+manual_mask = np.ones((128,512,1)).astype(np.bool)
 if read_mask:
     import h5py
     badpixel_file = "/gpfs/exfel/exp/SPB/201802/p002145/usr/Shared/calib/online_mask04.h5"
     with h5py.File(badpixel_file, "r") as file_handle:
         manual_mask = file_handle["mask"][...]
-    mask *= ~np.bool8(manual_mask[:, :, np.newaxis])
+    manual_mask = ~np.bool8(manual_mask[:, :, np.newaxis])
 
+# Building the initial mask
 # Last part of the mask is the badpixelMask that is added for each event
+initmask = np.ones((128,512,1)).astype(np.bool)
+if usemask:
+    #initmask &= hitmask
+    initmask &= manual_mask
+    #initmask &= edgemask
+
+def common_mode_correction(inarray, mask, d=64):
+    """
+    a: input array of shape (Y,X, cells)
+    mask: a boolean mask
+    d: size of sqaure asic
+    
+    returns per-asic common-mode corrected version of a
+    """
+    a = inarray.copy()
+    nmask = ~mask
+    a[nmask] = np.nan
+    m, n, l = a.shape
+    b = a.transpose(2, 0, 1).reshape(l, m, n//d, d).transpose(0, 3, 2, 1).reshape(l, d, n // d, m // d, d).transpose(0, 2, 3, 1, 4)
+    b -= np.nanmedian(b, axis=(3, 4))[:, :, :, np.newaxis, np.newaxis]
+    a[nmask] = inarray[nmask]
+    return a
 
 def onEvent(evt):
     global running_background
@@ -99,37 +131,44 @@ def onEvent(evt):
     agipd_module = add_record(evt['analysis'], 'analysis', 'AGIPD', agipd_data)
 
     # Dark calibration
-    calibrated, badmask = calibrator.calibrate_train(evt, agipd_module, agipd_gain, apply_gain_switch=True)
-    agipd_module = add_record(evt['analysis'], 'analysis', 'AGIPD/Calib', calibrated)
-    #badmask = mask.copy()
+    if calibrate:
+        calibrated, badpixmask = calibrator.calibrate_train_fast(evt, agipd_module, agipd_gain, apply_gain_switch=True)
+        badpixmask = np.bool8(badpixmask)
+        agipd_module = add_record(evt['analysis'], 'analysis', 'AGIPD/Calib', calibrated)
+    else:
+        badpixmask = np.ones((128,512,npulses)).astype(np.bool)
+    mask = (badpixmask & initmask)
+    maskhit = (mask & hitmask)
 
-    # Median correction
-    agipd_module = add_record(evt['analysis'], 'analysis', 'AGIPD/Calib', agipd_module.data - np.median(agipd_module.data,axis=(0,1)))
-
+    # Common-mode  correction
+    if commonmode:
+        agipd_module = add_record(evt['analysis'], 'analysis', 'AGIPD/Calib', common_mode_correction(agipd_module.data, mask))
+        
     # Flip the X-axis
     agipd_module = add_record(evt['analysis'], 'analysis', 'AGIPD/Calib', agipd_module.data[:,::-1])
-    badmask = badmask[:, ::-1]
-    badmask *= mask
-
-    # # Save image and mask
-    # import h5py
-    # with h5py.File("image_and_mask.h5", "w") as file_handle:
+    mask = mask[:, ::-1]
+    #agipd_module.data[-10:,-10:] = 100
+    
+    # Save image and mask
+    #import h5py
+    #with h5py.File("image_and_mask_%d.h5" %(T.trainId[0]), "w") as file_handle:
     #     file_handle.create_dataset("image_train", data=np.float64(agipd_module.data))
-    #     file_handle.create_dataset("mask_train", data=np.int64(badmask))
+    #     file_handle.create_dataset("mask_train", data=np.int64(mask))
 
     # For alignment purposes, calculate the average signal per train
     if alignment:
         # Mean image in a train
         meanimg = add_record(evt['analysis'], 'analysis', 'meanimg', agipd_module.data.mean(axis=-1))
-        plotting.image.plotImage(meanimg, group='Alignment', mask=badmask.min(axis=2))
+        plotting.image.plotImage(meanimg, group='Alignment', mask=mask.min(axis=2))
 
         # Single pulse image
         random_index = np.random.choice(npulses, 1)[0]
         singleimg = add_record(evt['analysis'], 'analysis', 'singleimg', agipd_module.data[:,:,random_index])
-        plotting.image.plotImage(singleimg, group='Alignment', mask=badmask[:,:,random_index])
+        plotting.image.plotImage(singleimg, group='Alignment', mask=mask[:,:,random_index])
 
         # Mean data intensity over all pixels in all cells of detector 
-        mean = add_record(evt['analysis'], 'analysis', 'mean', agipd_module.data.mean())
+        
+        mean = add_record(evt['analysis'], 'analysis', 'mean', agipd_module.data[:,:].mean())
         plotting.line.plotHistory(mean, group='Alignment')
 
     # Do hit-finding on full trains
@@ -141,44 +180,64 @@ def onEvent(evt):
                 running_background = np.zeros(agipd_module.data.shape[:-1])
             agipd_module.data[:] -= running_background[:, :, np.newaxis]
 
-        # Count lit pixel in each train
+        # Count lit pixel in each train using only badpixel mask
         analysis.hitfinding.countLitPixels(evt, agipd_module, aduThreshold=adu_threshold, hitscoreThreshold=hit_threshold, 
                                            hitscoreDark=dark_threshold,
                                            mask=mask, stack=True)
         hitscore  = evt['analysis']['litpixel: hitscore'].data
-        hittrain  = evt['analysis']['litpixel: isHit'].data
-        misstrain = evt['analysis']['litpixel: isMiss'].data
+        hittrain  = np.bool8(evt['analysis']['litpixel: isHit'].data)
+        misstrain = np.bool8(evt['analysis']['litpixel: isMiss'].data)
 
         # Calculate hitsore left-right ratio
-        left_score = ((agipd_module.data*badmask)[:, :256, :] > adu_threshold).sum(axis=(0, 1))
-        right_score = ((agipd_module.data*badmask)[:, 256:, :] > adu_threshold).sum(axis=(0, 1))
-        score_ratio = add_record(evt['analysis'], 'analysis', 'score_ratio', (left_score+1) / (right_score+1))
+        left_score = ((agipd_module.data*mask)[:, :256, :] > adu_threshold).sum(axis=(0, 1))
+        right_score = ((agipd_module.data*mask)[:, 256:, :] > adu_threshold).sum(axis=(0, 1))
+        litpixel_ratio = add_record(evt['analysis'], 'analysis', 'litpixel: ratio', (left_score+1) / (right_score+1))
+        hittrain_ratio = (litpixel_ratio.data > ratio_threshold).astype(np.bool)
+        misstrain_ratio = ~hittrain_ratio
         
-        # Plot the hitscore for each pulse
+        # Count lit pixel in each train using a special hit-finding mask
+        analysis.hitfinding.countLitPixels(evt, agipd_module, aduThreshold=adu_threshold, hitscoreThreshold=maskhit_threshold, 
+                                           hitscoreDark=dark_threshold, outkey="litpixel - masked: ", 
+                                           mask=maskhit, stack=True)
+        hitscore_masked  = evt['analysis']['litpixel - masked: hitscore'].data
+        hittrain_masked  = np.bool8(evt['analysis']['litpixel - masked: isHit'].data)
+        misstrain_masked = np.bool8(evt['analysis']['litpixel - masked: isMiss'].data)
+
+        # Plot the hitscores for each pulse
         for i in range(npulses):
             # Update event ID for each pulse
             evt.event_id = lambda: T.timestamp[i]
             hitscore_pulse = add_record(evt['analysis'], 'analysis', 'hitscore', hitscore[i])
             plotting.line.plotHistory(hitscore_pulse, group='Hitfinding', hline=hit_threshold, history=10000)
-            
+            ratio_pulse = add_record(evt['analysis'], 'analysis', 'litpixel ratio', litpixel_ratio.data[i])
+            plotting.line.plotHistory(ratio_pulse, group='Hitfinding', hline=ratio_threshold, history=10000)
+            hitscore_masked_pulse = add_record(evt['analysis'], 'analysis', 'hitscore - masked', hitscore_masked[i])
+            plotting.line.plotHistory(hitscore_masked_pulse, group='Hitfinding', hline=maskhit_threshold, history=10000)
+
         # Plot the hitscore against the cellID
         cellid_record = add_record(evt['analysis'], 'analysis', 'cellid', T.cellId)
         plotting.line.plotTrace(evt['analysis']['litpixel: hitscore'], paramX=cellid_record, history=10000, group='Hitfinding')
 
+
+        # Decide which scores to use for defining hits
+        #hittrain *= hittrain_ratio
+        #hittrain = hittrain_ratio
+        #hittrain = hittrain_masked
+        #hittrain |= hittrain_masked
+
         # Update the hitrate 
         analysis.hitfinding.hitrate(evt, hittrain)
         if ipc.mpi.is_main_worker():
-            plotting.line.plotHistory(evt['analysis']['hitrate'], history=100000, group='Hitfinding')
+            plotting.line.plotHistory(evt['analysis']['hitrate'], history=10000, group='Hitfinding')
 
         # Update the running background
         if background and misstrain.sum():
-            background_history_ratio = 0.9
+            background_history_ratio = 0.5
             running_background[:] = (background_history_ratio*running_background +
-                                     (1-background_history_ratio)*agipd_module.data[:, :, misstrain].mean(axis=2))
+                                     (1-background_history_ratio)*(agipd_module.data[:, :, misstrain].mean(axis=2)+running_background))
     
-        # If there is a hit
+        # These are the hits
         Nhits = hittrain.sum()
-        Nmiss = misstrain.sum()
         if Nhits:
         # Select pulses from the AGIPD train that are hits
             agipd_hits = agipd_module.data[:,:,hittrain]
@@ -189,19 +248,11 @@ def onEvent(evt):
                 agipd_pulse = add_record(evt['analysis'], 'analysis', 'AGIPD - hits', agipd_hits[:,:,i])
                 plotting.image.plotImage(agipd_pulse, group='Hitfinding')
 
-                #Plot left-right hitscore ratio
-                hitscore_ratio_record = add_record(evt['analysis'], 'analysis', 'score_ratio_single', score_ratio.data[hittrain][i])
-                plotting.line.plotHistory(hitscore_ratio_record, group='Hitfinding', history=10000)
-
-        #Plot one of the misses
+        # Theser are the misses
+        Nmiss = misstrain.sum()
         if Nmiss:
             agipd_misses = agipd_module.data[:,:,misstrain]
             pick_misses = np.random.choice(Nmiss, min(show_max_hits, Nmiss), replace=False)
             for i in pick_misses:
                 agipd_pulse_miss = add_record(evt['analysis'], 'analysis', 'AGIPD - miss', agipd_misses[:,:,i])
                 plotting.image.plotImage(agipd_pulse_miss, group='Hitfinding')
-
-                #Plot left-right hitscore ratio
-                hitscore_ratio_record = add_record(evt['analysis'], 'analysis', 'score_ratio_single - misses', score_ratio.data[1-hittrain][i])
-                plotting.line.plotHistory(hitscore_ratio_record, group='Hitfinding', history=10000)
-

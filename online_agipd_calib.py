@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+import calibrate
 class AGIPD_Calibrator:
     def __init__(self, filenames, max_pulses=120):
         self._nCells = 176
@@ -34,6 +35,7 @@ class AGIPD_Calibrator:
             self._relativeGainData.append(np.asarray(f["RelativeGain"]))
             self._gainLevelData.append(np.asarray(f["DigitalGainLevel"]))
             self._badpixData = np.transpose(np.array(self._badpixData), axes=(0, 1, 4, 3, 2))[...,self._pulse_filter]
+            # meaning of each dimensions: (null, gain level, y, x, cell id)
             self._darkOffsetData = np.transpose(np.array(self._darkOffsetData), axes=(0, 1, 4, 3, 2))[...,self._pulse_filter]
             self._relativeGainData = np.transpose(np.array(self._relativeGainData), axes=(0, 1, 4, 3, 2))[...,self._pulse_filter]
             self._gainLevelData = np.transpose(np.array(self._gainLevelData), axes=(0, 1, 4, 3, 2))[...,self._pulse_filter]
@@ -50,7 +52,7 @@ class AGIPD_Calibrator:
 
         if apply_gain_switch:
             outData -= darkoffset[-1][0][:len(outData)]
-            outData[gainData > gainleveldata[0,1]] = 32000
+            outData[gainData > gainleveldata[0,1]] = 1000
             badpixMask = (1 - badpixdata[0,0])
         else:
             pixGainLevel0 = gainData < gainleveldata[0,1]
@@ -66,4 +68,27 @@ class AGIPD_Calibrator:
                 outData[pixGain] = (outData[pixGain] - darkoffset[0,g,pixGain]) * relativegain[0,g,pixGain]
                 #outData[pixGain] *= (badpixdata[0,g,pixGain] == 0)
                 badpixMask[pixGain] = (badpixdata[0,g,pixGain] == 0)
+        return outData, badpixMask
+
+    def calibrate_train_fast(self, evt, aduData, gainData, apply_gain_switch=False):
+        """
+        gainData.ndim == 3 # y, x, cell id
+        aduData.data.ndim == 3 # y, x, cell id
+        """
+
+        npulses = aduData.data.shape[-1]
+        outData = aduData.data.copy()
+        darkoffset = self._darkOffsetData[..., :npulses]
+        relativegain = self._relativeGainData[...,:npulses]
+        badpixdata = self._badpixData[...,:npulses] # dimensions: (null, gain level, y, x, cell id)
+        gainleveldata = self._gainLevelData[...,:npulses] # dimensions: (null, gain level, y, x, cell id)
+        badpixMask = np.ones(aduData.data.shape, dtype=np.bool)
+        #print("before", outData.sum(), outData.shape)
+        if apply_gain_switch:
+            outData -= darkoffset[-1][0][:len(outData)]
+            outData[gainData > gainleveldata[0,1]] = 1000
+            badpixMask = (1 - badpixdata[0,0])
+        else:
+            calibrate.correct_agipd(outData, badpixMask, gainData, gainleveldata[0], darkoffset[0], relativegain[0], badpixdata[0])
+        #print("after", outData.sum(), outData.shape)
         return outData, badpixMask
