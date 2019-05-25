@@ -20,6 +20,8 @@ import argparse
 import numpy as np
 import h5py
 
+MAX_TRAINS_IN_FILE = 260
+
 def main():
     parser = argparse.ArgumentParser(description='Create synchronized AGIPD VDS files')
     parser.add_argument('run', help='Run number', type=int)
@@ -42,11 +44,15 @@ def main():
         for fname in flist:
             with h5py.File(fname, 'r') as f:
                 tid = f['INDEX/trainId'][:]
+                if tid.max() - tid.min() > MAX_TRAINS_IN_FILE:
+                    print('WARNING: Too large trainId range in %s (%d)' % (op.basename(fname), tid.max()-tid.min()))
+                    continue
                 tmin = min(tmin, tid.min())
                 tmax = max(tmax, tid.max())
                 ftrain = min(ftrain, tmin)
         ntrains = max(ntrains, tmax-tmin)
     ntrains = int(ntrains) + 4
+    ltrain = ftrain + ntrains
     print(ntrains, 'trains in run starting from', ftrain)
     all_trains = np.repeat(np.arange(ftrain, ftrain+ntrains, dtype='u8'), npulses)
 
@@ -77,7 +83,7 @@ def main():
                 # Annoyingly, raw data has an extra dimension for the IDs
                 #   (which is why we need the ravel)
                 tid = f[dset_prefix+'trainId'][:].ravel()
-                sel = (tid>0)
+                sel = (tid>0) & (tid<ltrain)
                 tid = tid[sel]
                 cid = f[dset_prefix+'cellId'][:].ravel()[sel]
                 pid = f[dset_prefix+'pulseId'][:].ravel()[sel]
