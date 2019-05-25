@@ -10,12 +10,12 @@ import h5py
 def main():
     parser = argparse.ArgumentParser(description='Create synchronized AGIPD VDS files')
     parser.add_argument('run', help='Run number', type=int)
-    parser.add_argument('-r', '--raw', help='If raw data (default=True)', action='store_true', default=True)
+    parser.add_argument('-p', '--proc', help='If proc data (default=False)', action='store_true', default=False)
     parser.add_argument('-o', '--out_folder', help='Path of output folder (default=.)', default='.')
     args = parser.parse_args()
-        
+    
     npulses = 176
-    if args.raw:
+    if not args.proc:
         folder = '/gpfs/exfel/exp/SPB/201802/p002145/raw/r%.4d/'%args.run
     else:
         folder = '/gpfs/exfel/exp/SPB/201802/p002145/proc/r%.4d/'%args.run
@@ -42,7 +42,7 @@ def main():
         dshape = f['INSTRUMENT/'+det_name +'/DET/15CH0:xtdf/image/data'].shape
     print('Shape of data in', det_name, 'is', dshape[1:])
 
-    if args.raw:
+    if not args.proc:
         out_fname = op.join(args.out_folder, 'r%.4d_vds_raw.h5'%args.run)
     else:
         out_fname = op.join(args.out_folder, 'r%.4d_vds_proc.h5'%args.run)
