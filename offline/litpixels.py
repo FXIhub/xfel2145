@@ -187,9 +187,13 @@ def main():
     parser.add_argument('-n', '--nproc', help='Number of processes to use', type=int, default=0)
     parser.add_argument('-m', '--module', help='Run on only this module (much faster)', type=int, default=-1)
     parser.add_argument('-t', '--thresholdADU', help='ADU threshold for lit pixel', type=float, default=25.)
+    parser.add_argument('-c', '--calibString', help='Glob string to Cheetah*h5 calib files (default:latest)', default='')
     args = parser.parse_args()
 
-    l = LitPixels(args.vds_file, nproc=args.nproc, thresh=args.thresholdADU)
+    if args.calibString != '':
+        l = LitPixels(args.vds_file, nproc=args.nproc, thresh=args.thresholdADU, calib_glob=args.calibString)
+    else:
+        l = LitPixels(args.vds_file, nproc=args.nproc, thresh=args.thresholdADU)
     if args.module == -1:
         l.run()
     else:
