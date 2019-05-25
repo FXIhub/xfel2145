@@ -20,7 +20,7 @@ class AGIPD_Combiner():
     Then use get_frame(num) to get specific frame
     '''
     def __init__(self, run, raw=True, calib_run=None, good_cells=range(176), verbose=0,
-            geom_fname='/gpfs/exfel/exp/SPB/201802/p002145/scratch/ayyerkar/ana/geometry/a1.geom'):
+            geom_fname='/gpfs/exfel/exp/SPB/201802/p002145/scratch/ayyerkar/ana/geometry/b1.geom'):
         self.num_h5cells = 176
         self.verbose = verbose
         self.good_cells = np.array(good_cells)
@@ -159,15 +159,15 @@ class AGIPD_Combiner():
                             shift = (trainid - f[train_name][frame_num].astype('i8')[0]) * self.num_h5cells
                             shift += (cellid - f[cell_name][frame_num].astype('i8')[0])
                         if frame_num+shift > f[dset_name].shape[0]:
-                            print('Not syncing in last train')
+                            print('WARNING: Not syncing in last train')
                             shift = 0
                     data = f[dset_name][frame_num+shift, type_ind]
                     if calibrate:
                         data = self._calibrate(data,
                                                f[dset_name][frame_num+shift,1],
-                                               i, self.good_cells[cell_ind])
+                                               i, cellid)
                     if threshold:
-                        data = self._threshold(data, i, cell_ind)
+                        data = self._threshold(data, i, cellid)
                 else:
                     if sync:
                         if i == self.first_module:
