@@ -56,9 +56,10 @@ def main():
     print(ntrains, 'trains in run starting from', ftrain)
     all_trains = np.repeat(np.arange(ftrain, ftrain+ntrains, dtype='u8'), npulses)
 
-    with h5py.File(flist[0], 'r') as f:
+    fname = glob.glob(folder+'/*AGIPD00*.h5')[0]
+    with h5py.File(fname, 'r') as f:
         det_name = list(f['INSTRUMENT'])[0]
-        dshape = f['INSTRUMENT/'+det_name +'/DET/15CH0:xtdf/image/data'].shape
+        dshape = f['INSTRUMENT/'+det_name +'/DET/0CH0:xtdf/image/data'].shape
     print('Shape of data in', det_name, 'is', dshape[1:])
 
     if not args.proc:
@@ -83,14 +84,24 @@ def main():
                 # Annoyingly, raw data has an extra dimension for the IDs
                 #   (which is why we need the ravel)
                 tid = f[dset_prefix+'trainId'][:].ravel()
+                # Remove the following bad data:
+                #   Train ID = 0, suggesting no input from AGIPD
+                #   Train ID out of range, for bit flips from the trainID server
+                #   Repeated train IDs: Keep only first train with that ID
                 sel = (tid>0) & (tid<ltrain)
+                uniq, nuniq = np.unique(tid, return_counts=True, return_index=True)[1:]
+                for i in uniq[nuniq>npulses]:
+                    print('WARNING: Repeated train IDs in %s from ind %d' % (op.basename(fname), i))
+                    sel[np.where(tid==tid[i])[0][npulses:]] = False
                 tid = tid[sel]
-                cid = f[dset_prefix+'cellId'][:].ravel()[sel]
-                pid = f[dset_prefix+'pulseId'][:].ravel()[sel]
                 indices = np.where(np.in1d(all_trains, tid))[0]
 
                 dset = f[dset_prefix+'data']
-                vsource_data = h5py.VirtualSource(dset)
+                if args.proc:
+                    vsource_data = h5py.VirtualSource(dset)[sel,:,:]
+                else:
+                    vsource_data = h5py.VirtualSource(dset)[sel,:,:,:]
+                '''
                 badfr = np.where(~sel)[0]
                 # The following trick only works if the empty trains are
                 #  at the beginning or end of file (which is usually the case).
@@ -101,7 +112,11 @@ def main():
                     vsource_data.sel = h5py._hl.selections.SimpleSelection(dset.shape)[badfr[-1]:]
                 elif badfr[-1] == sel.shape[0] - 1:
                     vsource_data.sel = h5py._hl.selections.SimpleSelection(dset.shape)[:badfr[0]]
+                '''
                 layout_data[m, indices] = vsource_data
+
+                cid = f[dset_prefix+'cellId'][:].ravel()[sel]
+                pid = f[dset_prefix+'pulseId'][:].ravel()[sel]
                 sel_indices = np.zeros(len(all_trains), dtype=np.bool)
                 sel_indices[indices] = True
                 outdset_cid[sel_indices] = cid
