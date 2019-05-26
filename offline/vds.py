@@ -93,6 +93,8 @@ def main():
                 for i in uniq[nuniq>npulses]:
                     print('WARNING: Repeated train IDs in %s from ind %d' % (op.basename(fname), i))
                     sel[np.where(tid==tid[i])[0][npulses:]] = False
+                if sel.sum() == 0:
+                    continue
                 tid = tid[sel]
                 indices = np.where(np.in1d(all_trains, tid))[0]
 
