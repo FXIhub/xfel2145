@@ -135,7 +135,7 @@ class LitPixels():
 
                 if len(vals.shape) > 3:
                     vals = vals[:,0]
-                np_litpix[m, pmin:pmax] = (vals>25).sum((1,2))
+                np_litpix[m, pmin:pmax] = (vals>self.thresh).sum((1,2))
                 if c > 2:
                     break
 

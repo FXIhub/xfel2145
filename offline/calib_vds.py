@@ -243,7 +243,7 @@ if __name__ == '__main__':
     parser.add_argument('-C', '--calib_run', help='Calibration run number (default:latest)', default=None)
     parser.add_argument('-f', '--frames', help='Get specific frames, can also be a set of frames, for example: 1,3,5-10,20,22 (default=None)', default=None)
     parser.add_argument('-p', '--proc', help='If processed data (default=False)', action='store_true', default=False)
-    parser.add_argument('-P', '--plot', help='Plot found hits (default=False)', action='store_true', default=False)
+    parser.add_argument('-P', '--plot', help='Plot the first X number of hits (default=0)', type=int, default=0)
     parser.add_argument('-o', '--out_folder', help='Path of output folder (default=/gpfs/exfel/exp/SPB/201802/p002145/scratch/hits/)', default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/hits/')
     parser.add_argument('-t', '--threshold', help='Lit pixel threshold (default=None)', type=float, default=None)
     parser.add_argument('-v', '--verbose', help='Output additional information (default=False)', default=False, action='store_true')
@@ -356,21 +356,28 @@ if __name__ == '__main__':
             print('Saved %d frames from run %d to: %s' % (len(frames), args.run, fname))
         f.close()
         os.system('chmod ao+rw %s' % fname)
-        if args.plot:
+        if args.plot > 0:
             from matplotlib import pyplot as plt
             from matplotlib import colors
             # plot up to 100 figures
             for n in range(len(frames)):
-                plt.figure(n)
-                plt.imshow(frame[n][560:721,420:621], norm=colors.LogNorm(vmin=0.1, vmax=1000))
-                plt.title('run 72 - shot %d - %d lit pixels' % (frames[n], lp[frames][n]))
+                fig = plt.figure(n)
+                plt.imshow(frame[n], norm=colors.LogNorm(vmin=0.1, vmax=1000))
+                #plt.imshow(frame[n][560:721,420:621], norm=colors.LogNorm(vmin=0.1, vmax=1000))
+                plt.xlim(420, 620)
+                plt.ylim(560, 720)
+                ax = fig.gca()
+                circ = plt.Circle(((frame[n].shape[1]-1)/2., (frame[n].shape[0]-1)/2.), radius=2, linewidth=2, color='r')
+                circ.set_fill(True)
+                ax.add_patch(circ)
+                plt.title('run %d - shot %d - %d lit pixels' % (args.run, frames[n], lp[frames][n]))
                 plt.colorbar()
                 plt.savefig('run%d_shot%d_zoom.png' % (args.run, frames[n]))
                 if args.verbose:
                     print('Saved figure: run%d_shot%d_zoom.png' % (args.run, frames[n]))
-                if (n > 99):
+                if (n >= args.plot):
                     break
             plt.close()
-
+        
 
         
