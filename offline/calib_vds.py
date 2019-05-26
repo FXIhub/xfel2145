@@ -34,7 +34,7 @@ class AGIPD_VDS_Calibrator():
         if self.is_raw_data and calib_run is None:
             calib_glob='/gpfs/exfel/exp/SPB/201802/p002145/usr/Shared/calib/latest/Cheetah*.h5'
         elif self.is_raw_data:
-            calib_glob='/gpfs/exfel/exp/SPB/201802/p002145/scratch/calib/r%.4d/Cheetah*.h5'%calib_run
+            calib_glob='/gpfs/exfel/exp/SPB/201802/p002145/scratch/calib/r%.4d/Cheetah*.h5' % calib_run
         self.dset_name = '/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/data'
         self.train_name = '/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/trainId'
         self.pulse_name = '/INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/pulseId'
@@ -43,6 +43,8 @@ class AGIPD_VDS_Calibrator():
         self.frame = np.empty((16,512,128))
         self.powder = None
         self.train_ids = None
+        self.cell_ids = None
+        self.pulse_ids = None
         
     def __enter__(self):
         return self
@@ -90,17 +92,17 @@ class AGIPD_VDS_Calibrator():
             badpix[gain_mode==i] = self.calib[module]['Badpixel'][i,cell][gain_mode==i]
         data = (np.float32(data) - offset)*gain
         data[badpix != 0] = 0
-        if self.verbose:
+        if self.verbose > 1:
             print('Found %d bad pixels for module %d' % ((badpix != 0).sum(), module))
         if cmode:
             # Median subtraction by 64x64 asics
             data = data.reshape(8,64,2,64).transpose(1,3,0,2).reshape(64,64,16)
-            if self.verbose:
+            if self.verbose > 1:
                 print('Common-mode correction for module %d: %.1f ADU' % (module, np.sum(np.median(data, axis=(0,1)))))
             data -= np.median(data, axis=(0,1))
             data = data.reshape(64,64,8,2).transpose(2,0,3,1).reshape(512,128)
         # Threshold below 0.5-0.7 photon (1 photon = 45 ADU)
-        if self.verbose:
+        if self.verbose > 1:
             print('Setting %d pixels below photon threshold to zero for module %d' % (((data < photonThresh*45*gain) & (data > 0)).sum(), module))
         data[data < photonThresh*45*gain] = 0
         #data[data > 10000] = 10000
@@ -114,23 +116,23 @@ class AGIPD_VDS_Calibrator():
         medium_gain = (~high_gain) * (~low_gain)
         return low_gain*2 + medium_gain
 
-    def _get_frame(self, num, type='frame', calibrate=False, threshold=False, assemble=True):
-        if num > self.nframes or num < 0:
-            print('Out of range: %d' % num)
-            return
-        
+    def _get_frames(self, num, type='frame', calibrate=False, threshold=False, assemble=True):
+        assert len(num.shape) == 1, "Must contain a 1D array of integers"
+        for n in num:
+            if n > self.nframes or n < 0:
+                print('Out of range: %d, skipping event..' % n)
+                num = np.delete(num, np.where(num == n))
+        # frame or frames?
+        if num.shape[0] > 1:
+            self.frame = np.empty((num.shape[0],16,512,128))
+        # these will not be the same as the IDs in the VDS file, depends on the selection of good_cells
         #cell_ind = num % len(self.good_cells)
         #train_ind = num // len(self.good_cells)
         #ind = self.good_cells[cell_ind] + train_ind * self.num_h5cells
-        cellId = self.vds[self.cell_name][num]
-        pulseId = self.vds[self.pulse_name][num]
-        trainId = self.vds[self.train_name][num]
-        #print('cellId:')
-        #print(cellId)
-        #print('cell_ind:')
-        #print(cell_ind)
-        if self.verbose:
-            print('Getting frame with cellId=%d, pulseId=%d and trainId=%d' % (cellId, pulseId, trainId))
+        # stick to VDS file for IDs
+        self.cell_ids = self.vds[self.cell_name][:][num]
+        self.pulse_ids = self.vds[self.pulse_name][:][num]
+        self.train_ids = self.vds[self.train_name][:][num]
         if type == 'frame':
             type_ind = 0
             threshold = False
@@ -141,27 +143,58 @@ class AGIPD_VDS_Calibrator():
             print('Unknown type string: %s' % type)
             return
         data = self.vds[self.dset_name][:,num]
-        if calibrate:
-            print('Calibrating frame')
-            for i in range(16):
-                self.frame[i] = self._calibrate_module(data[i,0,:,:], data[i,1,:,:], i, cellId)
-        else:
-            if self.is_raw_data:
-                self.frame = data[:,0,:,:]
+        for n in range(num.shape[0]):
+            if self.verbose:
+                print('Getting frame with cellId=%d, pulseId=%d and trainId=%d' % (self.cell_ids[n], self.pulse_ids[n], self.train_ids[n]))
+            if calibrate:
+                if self.verbose:
+                    print('Calibrating frame %d' % num[n])
+                for i in range(16):
+                    if num.shape[0] > 1:
+                        self.frame[n,i] = self._calibrate_module(data[i,n,0,:,:], data[i,n,1,:,:], i, self.cell_ids[n])
+                    else:
+                        self.frame[i] = self._calibrate_module(data[i,n,0,:,:], data[i,n,1,:,:], i, self.cell_ids[n])
             else:
-                self.frame = data[:]
+                if self.is_raw_data:
+                    if num.shape[0] > 1:
+                        self.frame[n] = data[:,n,0,:,:]
+                    else:
+                        self.frame = data[:,n,0,:,:]
+                else:
+                    if num.shape[0] > 1:
+                        self.frame[n] = data[:]
+                    else:
+                        self.frame = data[:]
         if not assemble or self.geom_fname is None:
             return np.copy(self.frame)
         else:
-            if self.verbose:
-                print('Assembling frame')
-            return geom.apply_geom_ij_yx((self.y, self.x), self.frame)
+            if num.shape[0] > 1:
+                output = []
+                for n in range(num.shape[0]):
+                    if self.verbose:
+                        print('Assembling frame %d' % num[n])
+                    output.append(geom.apply_geom_ij_yx((self.y, self.x), self.frame[n]))
+                return np.array(output)
+            else:
+                return geom.apply_geom_ij_yx((self.y, self.x), self.frame)
     
-    def get_frame(self, num, calibrate=False, assemble=True):
-        return self._get_frame(num, type='frame', calibrate=calibrate, assemble=assemble)
+    def get_frame(self, num, calibrate=True, assemble=True):
+        if type(num) is int:
+            num = np.array([num])
+        elif type(num) is float:
+            num = np.array([int(num)])
+        elif type(num) is list:
+            num = np.array(num, dtype=np.int)
+        return self._get_frames(num, type='frame', calibrate=calibrate, assemble=assemble)
 
     def get_gain(self, num, threshold=False, assemble=True):
-        return self._get_frame(num, type='gain', calibrate=False, threshold=threshold, assemble=assemble)
+        if type(num) is int:
+            num = np.array([num])
+        elif type(num) is float:
+            num = np.array([int(num)])
+        elif type(num) is list:
+            num = np.array(num, dtype=np.int)
+        return self._get_frames(num, type='gain', calibrate=False, threshold=threshold, assemble=assemble)
 
     def get_powder(self):
         if self.powder is not None:
@@ -207,11 +240,56 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create calibrated AGIPD VDS files')
     parser.add_argument('run', help='Run number', type=int)
     parser.add_argument('-c', '--chunk', help='Chunk size (default=2000)', type=int, default=2000)
-    parser.add_argument('-f', '--frame', help='Get frame (default=None)', type=int, default=None)
-    parser.add_argument('-p', '--proc', help='If proc data (default=False)', action='store_true', default=False)
-    parser.add_argument('-o', '--out_folder', help='Path of output folder (default=.)', default='.')
+    parser.add_argument('-C', '--calib_run', help='Calibration run number (default:latest)', default=None)
+    parser.add_argument('-f', '--frames', help='Get specific frames, can also be a set of frames, for example: 1,3,5-10,20,22 (default=None)', default=None)
+    parser.add_argument('-p', '--proc', help='If processed data (default=False)', action='store_true', default=False)
+    parser.add_argument('-P', '--plot', help='Plot found hits (default=False)', action='store_true', default=False)
+    parser.add_argument('-o', '--out_folder', help='Path of output folder (default=/gpfs/exfel/exp/SPB/201802/p002145/scratch/hits/)', default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/hits/')
+    parser.add_argument('-t', '--threshold', help='Lit pixel threshold (default=None)', type=float, default=None)
     parser.add_argument('-v', '--verbose', help='Output additional information (default=False)', default=False, action='store_true')
     args = parser.parse_args()
+
+    import os
+    threshold = args.threshold
+    if args.frames is None:
+        hlname = '/gpfs/exfel/exp/SPB/201802/p002145/scratch/hitlist/r%04d_hits.h5' % args.run
+        if not os.path.exists(hlname):
+            print('No hitlist available, run: python litpixels.py r%04d_vds_raw.h5' % args.run)
+            frames = None
+            hl = None
+        else:
+            from matplotlib import pyplot as plt
+            hl = h5py.File(hlname, 'r')
+            lp = hl['litpixels_04'][:]
+            bin_values, bin_edges = np.histogram(lp, bins=(lp.max()-lp.min())); 
+            bin_centers = np.array([(bin_edges[i] + bin_edges[i+1])/2 for i in range(len(bin_values))])
+
+            if args.threshold is None:
+                # plot to determine threshold
+                fig = plt.figure(num=None, figsize=(13.5, 5), dpi=100, facecolor='w', edgecolor='k')
+                canvas = fig.add_subplot(121)
+                canvas.plot(lp, '.')
+                plt.suptitle('run %d' % args.run)
+                plt.title('lit pixels in module 4 - common-mode corrected')
+                plt.xlabel('shot number')
+                plt.ylabel('number of lit pixels')
+                canvas = fig.add_subplot(122)
+                canvas.plot(bin_centers, bin_values, 'k')
+                plt.yscale('log')
+                plt.title('lit-pixel histogram')
+                plt.ylabel('frequency')
+                plt.xlabel('number of lit pixels')
+                plt.savefig('run%d_lit_pixels.png' % args.run)
+                print('Saved figure: run%d_lit_pixels.png' % args.run)
+                plt.show()
+                threshold = int(input("Lit-pixel threshold? "))
+            else:
+                threshold = args.threshold
+            frames = np.where(lp > threshold)[0]
+            print('Found %d hits above lit-pixel threshold' % len(frames))
+    else:
+        hl = None
+        frames = None
     
     npulses = 176
     good_cells = list(range(npulses))
@@ -224,39 +302,75 @@ if __name__ == '__main__':
         fname = '/gpfs/exfel/exp/SPB/201802/p002145/scratch/vds/r%04d_vds_proc.h5' % args.run
     else:
         fname = '/gpfs/exfel/exp/SPB/201802/p002145/scratch/vds/r%04d_vds_raw.h5' % args.run
-    
+    if args.frames is not None:
+        frames = []
+        tmp = args.frames
+        for s in tmp.split(','):
+            if "-" in s:
+                fmin, fmax = s.split('-')
+                frames += list(range(int(fmin), int(fmax)+1))
+            else:
+                frames += [int(s)]
     print('Calibrating virtual data set for run %d' % args.run)
-    with AGIPD_VDS_Calibrator(fname, good_cells=good_cells, chunk_size=args.chunk, verbose=int(args.verbose)) as c:
-        if args.frame is None:
+    with AGIPD_VDS_Calibrator(fname, good_cells=good_cells, chunk_size=args.chunk, calib_run=args.calib_run, verbose=int(args.verbose)) as c:
+        if frames is None:
             print('Calculating powder sum for run %d' % args.run)
             c.get_powder()
         else:
-            print('Calibrating frame %d from run %d' % (args.frame, args.run))
-            frame = c.get_frame(args.frame, calibrate=True)
-        import os
-        if args.frame is None:
+            print('Calibrating %s frames from run %d' % (len(frames), args.run))
+            frame = c.get_frame(frames, calibrate=True)
+        if frames is None:
             if args.proc:
-                fname = 'data/r%04d_powder_proc.h5' % args.run
+                fname = '%s/r%04d_powder_proc.h5' % (args.out_folder, args.run)
             else:
-                fname = 'data/r%04d_powder_raw.h5' % args.run
+                fname = '%s/r%04d_powder_raw.h5' % (args.out_folder, args.run)
         else:
-            if args.proc:
-                fname = 'data/r%04d_frame%d_proc.h5' % (args.run, args.frame)
-            else:
-                fname = 'data/r%04d_frame%d_raw.h5' % (args.run, args.frame)
-        if not os.path.isdir('data'):
-            os.mkdir('data')
+            fname = '%s/r%04d_hits.h5' % (args.out_folder, args.run)
+        if not os.path.isdir(args.out_folder):
+            os.mkdir(args.out_folder)
         if os.path.exists(fname):
             print('WARNING: overwriting file: %s' % fname)
         f = h5py.File(fname, 'w')
-        if args.frame is None:
+        if frames is None:
             f['sum'] = c.powder
             f['nframes'] = c.npowder
             print('Saved powder pattern from run %d to: %s' % (args.run, fname))
         else:
-            g = f.create_group("data")
+            if hl is not None:
+                # copy data from hitlist
+                print('Copying data from hitlist: %s' % hlname)
+                for l in hl.keys():
+                    hl.copy(l, f)
+                hl.close()
+            g = f.create_group("hits")
+            g['litpixelThreshold'] = threshold
+            if args.proc:
+                g['processing'] = 'processed'
+            else:
+                g['processing'] = 'raw'
             g['raw'] = c.frame
             g['assembled'] = frame
-            print('Saved frame %d from run %d to: %s' % (args.frame, args.run, fname))
+            g['pulseID'] = c.pulse_ids
+            g['trainID'] = c.train_ids
+            g['cellID'] = c.cell_ids
+            print('Saved %d frames from run %d to: %s' % (len(frames), args.run, fname))
         f.close()
+        os.system('chmod ao+rw %s' % fname)
+        if args.plot:
+            from matplotlib import pyplot as plt
+            from matplotlib import colors
+            # plot up to 100 figures
+            for n in range(len(frames)):
+                plt.figure(n)
+                plt.imshow(frame[n][560:721,420:621], norm=colors.LogNorm(vmin=0.1, vmax=1000))
+                plt.title('run 72 - shot %d - %d lit pixels' % (frames[n], lp[frames][n]))
+                plt.colorbar()
+                plt.savefig('run%d_shot%d_zoom.png' % (args.run, frames[n]))
+                if args.verbose:
+                    print('Saved figure: run%d_shot%d_zoom.png' % (args.run, frames[n]))
+                if (n > 99):
+                    break
+            plt.close()
+
+
         
