@@ -121,3 +121,11 @@ $ h5ls -r r0018_vds_proc.h5
 /INSTRUMENT/SPB_DET_AGIPD1M-1/DET/image/trainId Dataset {173008}
 ```
 The extra dimension in the raw data has the gain (digital) data for the frame.
+
+## Hitfinding
+The virtual data sets can be used for hitinding with the `litpixels.py` and `calib_vds.py` scripts in this folder. The `litpixels.py` script produces an HDF5 file with lit pixel values for all shots, that should be placed in the `/scratch/hitlist/` folder with read permissions to all users `chmod +r /scratch/hitlist/*h5`. They can then be read by the `calib_vds.py` script to determine a hit threshold and calibrate and save the hits.  Some runs should already be converted in the `/scratch/hits/` folder. Example usage:
+
+```
+python litpixels.py /scratch/vds/r0072_vds_raw.h5 -n 40 -m 4 -t 25
+python calib_vds.py 72 -P -v
+```
