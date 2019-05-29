@@ -185,7 +185,10 @@ class AGIPD_VDS_Calibrator():
             num = np.array([int(num)])
         elif type(num) is list:
             num = np.array(num, dtype=np.int)
-        return self._get_frames(num, type='frame', calibrate=calibrate, assemble=assemble)
+        if len(num) < 1:
+            return np.empty((16,512,128))
+        else:
+            return self._get_frames(num, type='frame', calibrate=calibrate, assemble=assemble)
 
     def get_gain(self, num, threshold=False, assemble=True):
         if type(num) is int:
@@ -261,7 +264,7 @@ if __name__ == '__main__':
             from matplotlib import pyplot as plt
             hl = h5py.File(hlname, 'r')
             lp = hl['litpixels_04'][:]
-            bin_values, bin_edges = np.histogram(lp, bins=(lp.max()-lp.min())); 
+            bin_values, bin_edges = np.histogram(lp, bins=int(lp.max()-lp.min()+1)); 
             bin_centers = np.array([(bin_edges[i] + bin_edges[i+1])/2 for i in range(len(bin_values))])
 
             if args.threshold is None:
@@ -348,11 +351,12 @@ if __name__ == '__main__':
                 g['processing'] = 'processed'
             else:
                 g['processing'] = 'raw'
-            g['raw'] = c.frame
-            g['assembled'] = frame
-            g['pulseID'] = c.pulse_ids
-            g['trainID'] = c.train_ids
-            g['cellID'] = c.cell_ids
+            if len(frames) > 0:
+                g['raw'] = c.frame
+                g['assembled'] = frame
+                g['pulseID'] = c.pulse_ids
+                g['trainID'] = c.train_ids
+                g['cellID'] = c.cell_ids
             print('Saved %d frames from run %d to: %s' % (len(frames), args.run, fname))
         f.close()
         os.system('chmod ao+rw %s' % fname)
