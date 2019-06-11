@@ -8,8 +8,8 @@ import sparse
 
 parser = argparse.ArgumentParser(description='Count lit-pixels on sparse HDF5 files')
 parser.add_argument('run', type=int, help='Run number')
-parser.add_argument('-p', '--path', type=str, help='Path to sparse emc file',
-                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/emc/')
+parser.add_argument('-p', '--path', type=str, help='Path to sparse file',
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/sparse/')
 parser.add_argument('-m', '--mask', type=str, default=None, help='Good pixel mask')
 args = parser.parse_args()
 

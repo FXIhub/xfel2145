@@ -12,12 +12,12 @@ import writeemc
 import detector
 import reademc
 
-parser = argparse.ArgumentParser(description='Merge EMC file chunks into single file')
+parser = argparse.ArgumentParser(description='Merge sparse file chunks into single file')
 parser.add_argument('run', type=int, help='Run number')
-parser.add_argument('-p', '--path', type=str, help='Path to chunked emc files',
-                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/emc/chunks')
+parser.add_argument('-p', '--path', type=str, help='Path to chunked sparse files',
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/sparse/chunks')
 parser.add_argument('-o', '--out_folder', help='Path to output folder',
-                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/emc/')
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/sparse/')
 parser.add_argument('-d', '--delete', action='store_false', default=True, 
                     help='Use this option for not deleting the chunks afterwards')
 args = parser.parse_args()
