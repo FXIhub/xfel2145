@@ -10,3 +10,6 @@ Also please do raise an issue if you want to add **new analysis tasks**.
 
 By having all the efforts combined in one place you'll be able to **learn**
 from eachother, **avoid duplicating** work, and immediately see your **impact**.
+
+It also contains the special `tutorial` folder which contains examples to
+help you get started analysing data.
