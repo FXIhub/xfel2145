@@ -63,7 +63,8 @@ if __name__ == '__main__':
     	    for n in range(nhits_to_plot):
     	        fig = plt.figure(n)
     	        #plt.imshow(hits[n]/45., norm=colors.LogNorm(vmin=0.1, vmax=100), interpolation='nearest', cmap='jet')
-    	        plt.imshow(hits[n], norm=colors.LogNorm(vmin=0.1, vmax=1000))
+    	        #plt.imshow(hits[n], norm=colors.LogNorm(vmin=0.1, vmax=1000))
+    	        plt.imshow(hits[n]/45., norm=colors.LogNorm(vmin=0.1, vmax=100))
     	        plt.xlim(420, 620)
     	        plt.ylim(560, 720)
     	        ax = fig.gca()
