@@ -7,7 +7,7 @@ import numpy as np
 import glob
 import h5py
 # The following line works on Maxwell
-sys.path.append('/mnt/cbis/home/benedikt/software/EMC/utils/py_src')
+sys.path.append('/home/ayyerkar/.local/dragonfly/utils/py_src')
 import writeemc
 import detector
 import reademc
@@ -15,7 +15,7 @@ import reademc
 parser = argparse.ArgumentParser(description='Crop full sparse file into smaller size')
 parser.add_argument('run', type=int, help='Run number')
 parser.add_argument('-p', '--path', type=str, help='Path to allq emc files',
-                    default='/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/data/')
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/sparse/')
 parser.add_argument('-r', '--res', help='Resolution to save to (0=lowq, 1=medq). Default=0', type=int, default=0)
 args = parser.parse_args()
 
@@ -29,12 +29,12 @@ else:
     print('"res" parameter can only have values 0, 1')
     sys.exit(1)
 
-allqdet = detector.Detector('/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/det/det_allq.h5')
+allqdet = detector.Detector('/gpfs/exfel/exp/SPB/201802/p002145/scratch/benedikt/aux/det_allq.h5')
 allqfile = os.path.join(args.path, 'r%04d.h5' %args.run)
 print('Cropping the following files:', allqfile)
 allq_emc = reademc.EMCReader(allqfile, allqdet)
 
-det = detector.Detector('/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/det/det'+post_tag)
+det = detector.Detector('/gpfs/exfel/exp/SPB/201802/p002145/scratch/benedikt/aux/det'+post_tag)
 emcfile = os.path.join(args.path, post_tag[1:-3] + "/r%04d.h5" %(args.run))
 print("Saving to new emc file: ", emcfile)
 emc = writeemc.EMCWriter(emcfile, num_pix)
@@ -55,3 +55,4 @@ with h5py.File(allqfile, "r") as af:
             del cf["scores"]
         af.copy(af["id"], cf)
         af.copy(af["scores"], cf)
+os.system('chmod ao+rw %s' % (emcfile))

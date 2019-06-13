@@ -8,7 +8,8 @@ import glob
 import h5py
 import sparse
 # The following line works on Maxwell
-sys.path.append('/mnt/cbis/home/benedikt/software/EMC/utils/py_src')
+sys.path.append('/home/ayyerkar/.local/dragonfly/utils/py_src')
+#sys.path.append('/mnt/cbis/home/benedikt/software/EMC/utils/py_src')
 import writeemc
 import detector
 import reademc
@@ -16,11 +17,11 @@ import reademc
 parser = argparse.ArgumentParser(description='Select hits from sparse HDF5 file and save to a new file')
 parser.add_argument('run', type=int, help='Run number')
 parser.add_argument('-p', '--path', type=str, help='Path to emc files',
-                    default='/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/data/lowq/')
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/sparse/lowq')
 parser.add_argument('-o', '--output', type=str, help='Output path',
-                    default='/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/data/lowq/hits/')
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/sparse/lowq/hits')
 parser.add_argument('-d', '--detector', type=str, help='Path to detector file',
-                    default='/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/det/det_lowq.h5')
+                    default='/gpfs/exfel/exp/SPB/201802/p002145/scratch/benedikt/aux/det_lowq.h5')
 parser.add_argument('-t', '--threshold', type=int, help='hit selection threshold',
                     default=105)
 args = parser.parse_args()
