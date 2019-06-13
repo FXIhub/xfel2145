@@ -36,15 +36,15 @@ allq_emc = reademc.EMCReader(allqfile, allqdet)
 
 det = detector.Detector('/mnt/cbis/home/benedikt/scratch/XFEL/xfel2145/det/det'+post_tag)
 emcfile = os.path.join(args.path, post_tag[1:-3] + "/r%04d.h5" %(args.run))
-#print("Saving to new emc file: ", emcfile)
-#emc = writeemc.EMCWriter(emcfile, num_pix)
+print("Saving to new emc file: ", emcfile)
+emc = writeemc.EMCWriter(emcfile, num_pix)
 
-#for i in range(allq_emc.num_frames):
-#    frame = allq_emc.get_frame(i, raw=True).reshape((16,512,128))
-#    emc.write_frame(frame[modules,-subset:].ravel().astype('i4'))
-#    sys.stderr.write('\r%d/%d'%(i+1, allq_emc.num_frames))
-#sys.stderr.write('\n')
-#emc.finish_write()
+for i in range(allq_emc.num_frames):
+    frame = allq_emc.get_frame(i, raw=True).reshape((16,512,128))
+    emc.write_frame(frame[modules,-subset:].ravel().astype('i4'))
+    sys.stderr.write('\r%d/%d'%(i+1, allq_emc.num_frames))
+sys.stderr.write('\n')
+emc.finish_write()
 
 print('copying ids/scores from: %s' % allqfile)
 with h5py.File(allqfile, "r") as af:
